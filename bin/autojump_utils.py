@@ -3,7 +3,6 @@
 from __future__ import print_function
 
 import errno
-import fnmatch
 import os
 import platform
 import re
@@ -224,6 +223,6 @@ def load_rc():
             glob = pieces[1]
             if not glob.endswith('/'):
                 glob = glob + '/'
-            prefix_folding[pieces[0]] = fnmatch.translate(glob)
+            prefix_folding[pieces[0]] = glob.replace('*', '[^/]*').replace('?', '[^/]')
     return prefix_folding
 
