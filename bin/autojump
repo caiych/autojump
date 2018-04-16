@@ -142,9 +142,7 @@ def strip_prefix(path, prefix_folding):
   for prefix_alias in prefix_folding:
     prefix_re = prefix_folding[prefix_alias]
     m = re.match(prefix_re, path)
-    print (prefix_re, path)
     if m:
-      print (re.sub(prefix_re, '$$%s$$/'%(prefix_alias,), path), prefix_re, m.group(0))
       return re.sub(prefix_re, '$$%s$$/'%(prefix_alias,), path), '$$%s$$/'%(prefix_alias,), m.group(0)
   return path, '', ''
 
