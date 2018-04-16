@@ -3,6 +3,27 @@ NAME
 
 autojump - a faster way to navigate your filesystem
 
+
+WHAT'S DIFFERENT THAN ORIGINAL
+-----------------------------
+support a config file located at ~/.autojumprc. It's a tsv format file that
+could normalize some slightly different paths.
+e.g. you have the following directories:
+1. /root/workspace1/java/com/github/
+1. /root/workspace2/java/com/github/
+1. /root/workspace3/java/com/github/
+
+With the original version or this version without config, visiting one of the
+directory won't help if you are working in the other 2 workspaces(in fact they
+are competing with each other).
+With this version and config file like this:
+```
+CUSTOMIZED_PREFIX\t/root/*
+```
+Visiting any of it would log $$CUSTOMIZED_PREFIX$$/java/com/github/, and run
+`j github` in any workspace would lead you to the directory in this workspace.
+
+
 DESCRIPTION
 -----------
 
