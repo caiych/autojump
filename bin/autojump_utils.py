@@ -3,6 +3,7 @@
 from __future__ import print_function
 
 import errno
+import fnmatch
 import os
 import platform
 import re
@@ -209,3 +210,20 @@ def unico(string):
     if is_python2() and not isinstance(string, unicode):
         return unicode(string, encoding='utf-8', errors='replace')
     return string
+
+def load_rc():
+    prefix_folding = {}
+    path = os.path.join(os.path.expanduser('~'), '.autojumprc')
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        for line in f.readlines():
+            pieces = line.strip().split('\t')
+            if len(pieces) != 2:
+                continue
+            glob = pieces[1]
+            if not glob.endswith('/'):
+                glob = glob + '/'
+            prefix_folding[pieces[0]] = fnmatch.translate(glob)
+    return prefix_folding
+

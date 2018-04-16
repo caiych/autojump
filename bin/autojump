@@ -22,6 +22,7 @@ from __future__ import print_function
 
 import os
 import sys
+import re
 from itertools import chain
 from math import sqrt
 from operator import attrgetter
@@ -42,9 +43,9 @@ from autojump_argparse import ArgumentParser
 # shell + Python app with no outside dependencies (except Python). As a
 # consequence we use relative imports and depend on file prefixes to prevent
 # module conflicts.
+from autojump_data import Entry
 from autojump_data import dictify
 from autojump_data import entriefy
-from autojump_data import Entry
 from autojump_data import load
 from autojump_data import save
 from autojump_match import match_anywhere
@@ -58,6 +59,7 @@ from autojump_utils import is_autojump_sourced
 from autojump_utils import is_osx
 from autojump_utils import is_windows
 from autojump_utils import last
+from autojump_utils import load_rc
 from autojump_utils import print_entry
 from autojump_utils import print_local
 from autojump_utils import print_tab_menu
@@ -69,6 +71,8 @@ VERSION = '22.5.1'
 FUZZY_MATCH_THRESHOLD = 0.6
 TAB_ENTRIES_COUNT = 9
 TAB_SEPARATOR = '__'
+
+STRIP_PREFIX_RE='^/google/src/cloud/[^/]*/[^/]*/'
 
 
 def set_defaults():
@@ -89,6 +93,7 @@ def set_defaults():
         )
     config['data_path'] = os.path.join(data_home, 'autojump', 'autojump.txt')
     config['backup_path'] = os.path.join(data_home, 'autojump', 'autojump.txt.bak')
+    config['prefix_folding'] = load_rc()
 
     return config
 
@@ -135,6 +140,14 @@ def parse_arguments():
 
     return parser.parse_args()
 
+def strip_prefix(path, prefix_folding):
+  for prefix_alias in prefix_folding:
+    prefix_re = prefix_folding[prefix_alias]
+    m = re.match(prefix_re, path)
+    if m:
+      return re.sub(prefix_re, '$$%s$$/'%(prefix_alias,), path), '$$%s$$/'%(prefix_alias,), m.group(0)
+  return path, '', ''
+
 
 def add_path(data, path, weight=10):
     """
@@ -168,7 +181,7 @@ def detect_smartcase(needles):
     return not any(imap(has_uppercase, needles))
 
 
-def find_matches(entries, needles, check_entries=True):
+def find_matches(entries, needles, prefix_folding, check_entries=True):
     """Return an iterator to matching entries."""
     # TODO(wting|2014-02-24): replace assertion with unit test
     assert isinstance(needles, list), 'Needles must be a list.'
@@ -194,9 +207,23 @@ def find_matches(entries, needles, check_entries=True):
         reverse=True,
     )
 
+    _, prefix_alias, prefix = strip_prefix(pwd, prefix_folding)
+    def only_prefixed(haystack):
+      return ifilter(lambda entry: entry.path.startswith(prefix_alias), haystack)
+
+    def prepend_prefix(match):
+      return imap(lambda entry:
+                  Entry(
+                      entry.path.replace(prefix_alias, prefix),
+                      entry.weight
+                  ), match)
+
     return ifilter(
         lambda entry: not is_cwd(entry) and path_exists(entry),
         chain(
+            prepend_prefix(
+                match_anywhere(needles, only_prefixed(data), ignore_case)
+            ),
             match_consecutive(needles, data, ignore_case),
             match_fuzzy(needles, data, ignore_case),
             match_anywhere(needles, data, ignore_case),
@@ -204,7 +231,7 @@ def find_matches(entries, needles, check_entries=True):
     )
 
 
-def handle_tab_completion(needle, entries):
+def handle_tab_completion(needle, entries, prefix_folding):
     tab_needle, tab_index, tab_path = get_tab_entry_info(needle, TAB_SEPARATOR)
 
     if tab_path:
@@ -213,7 +240,7 @@ def handle_tab_completion(needle, entries):
         get_ith_path = lambda i, iterable: last(take(i, iterable)).path
         print_local(get_ith_path(
             tab_index,
-            find_matches(entries, [tab_needle], check_entries=False),
+            find_matches(entries, [tab_needle], prefix_folding, check_entries=False),
         ))
     elif tab_needle:
         # found partial tab completion entry
@@ -223,6 +250,7 @@ def handle_tab_completion(needle, entries):
                 TAB_ENTRIES_COUNT, find_matches(
                     entries,
                     [tab_needle],
+                    prefix_folding,
                     check_entries=False,
                 ),
             ),
@@ -235,6 +263,7 @@ def handle_tab_completion(needle, entries):
                 TAB_ENTRIES_COUNT, find_matches(
                     entries,
                     [needle],
+                    prefix_folding,
                     check_entries=False,
                 ),
             ),
@@ -278,18 +307,22 @@ def main(args):  # noqa
 
     # all arguments are mutually exclusive
     if args.add:
-        save(config, first(add_path(load(config), args.add)))
+        path, _, _= strip_prefix(args.add, config['prefix_folding'])
+        save(config, first(add_path(load(config), path)))
     elif args.complete:
         handle_tab_completion(
             needle=first(chain(sanitize(args.directory), [''])),
             entries=entriefy(load(config)),
+            prefix_folding=config['prefix_folding'],
         )
     elif args.decrease:
-        data, entry = decrease_path(load(config), get_pwd(), args.decrease)
+        path, _, _ = strip_prefix(get_pwd(), config['prefix_folding'])
+        data, entry = decrease_path(load(config), path, args.decrease)
         save(config, data)
         print_entry(entry)
     elif args.increase:
-        data, entry = add_path(load(config), get_pwd(), args.increase)
+        path, _, _ = strip_prefix(get_pwd(), config['prefix_folding'])
+        data, entry = add_path(load(config), path, args.increase)
         save(config, data)
         print_entry(entry)
     elif args.purge:
@@ -303,7 +336,7 @@ def main(args):  # noqa
         # Return best match.
         entries = entriefy(load(config))
         print_local(first(chain(
-            imap(attrgetter('path'), find_matches(entries, [''])),
+            imap(attrgetter('path'), find_matches(entries, [''], config['prefix_folding'])),
             # always return a path to calling shell functions
             ['.'],
         )))
@@ -325,12 +358,12 @@ def main(args):  # noqa
             print_local(
                 get_ith_path(
                     tab_index,
-                    find_matches(entries, [tab_needle]),
+                    find_matches(entries, [tab_needle], config['prefix_folding']),
                 ),
             )
         else:
             print_local(first(chain(
-                imap(attrgetter('path'), find_matches(entries, needles)),
+                imap(attrgetter('path'), find_matches(entries, needles, config['prefix_folding'])),
                 # always return a path to calling shell functions
                 ['.'],
             )))
