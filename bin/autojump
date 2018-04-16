@@ -72,8 +72,6 @@ FUZZY_MATCH_THRESHOLD = 0.6
 TAB_ENTRIES_COUNT = 9
 TAB_SEPARATOR = '__'
 
-STRIP_PREFIX_RE='^/google/src/cloud/[^/]*/[^/]*/'
-
 
 def set_defaults():
     config = {}
